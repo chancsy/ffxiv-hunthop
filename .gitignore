@@ -1,0 +1,17 @@
+# .NET build output
+bin/
+obj/
+.vs/
+*.user
+
+# Node
+node_modules/
+
+# ListenerCheck's local test token (secret)
+tools/ListenerCheck/token.txt
+
+# Private dev notes (handover, research): never committed
+.dev/
+
+# Local dev build counter (4th version segment), see HuntHop.csproj
+plugin/HuntHop/build.number

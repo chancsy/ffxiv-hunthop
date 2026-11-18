@@ -1,0 +1,8 @@
+<Project>
+  <!-- Dalamud SDK dependencies reference .NETFramework,Version=v1.0 metadata.
+       Suppress MSB3644 so the build doesn't error on missing legacy ref assemblies. -->
+  <PropertyGroup>
+    <MSBuildWarningsAsErrors>$(MSBuildWarningsAsErrors.Replace('MSB3644;','').Replace(';MSB3644','').Replace('MSB3644',''))</MSBuildWarningsAsErrors>
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3644</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+</Project>

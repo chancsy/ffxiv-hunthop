@@ -1,0 +1,11 @@
+{
+  "name": "hunthop-userscript-tests",
+  "private": true,
+  "description": "jsdom tests for userscript/faloop-hunthop.user.js (toast + desktop-notification parsing).",
+  "scripts": {
+    "test": "node test-userscript.js"
+  },
+  "devDependencies": {
+    "jsdom": "24.1.3"
+  }
+}

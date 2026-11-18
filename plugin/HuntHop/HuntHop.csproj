@@ -1,0 +1,32 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <!-- Plugin metadata (consumed by DalamudPackager at build time) -->
+    <Name>HuntHop</Name>
+    <Author>Kat</Author>
+    <Punchline>Faloop spawn alerts in chat, with a one-click world visit through Lifestream.</Punchline>
+    <Description>Receives Faloop spawn alerts from a browser userscript over localhost, posts them to chat with a [Go] link, and can world-visit through Lifestream when you are idle at a city aetheryte.</Description>
+
+    <AssemblyName>HuntHop</AssemblyName>
+
+    <!-- Release version (MAJOR.MINOR.PATCH): the only version git and CHANGELOG.md track. -->
+    <ReleaseVersion>0.1.0</ReleaseVersion>
+
+    <!-- Local build number = 4th version segment, so Dalamud treats every dev build as new.
+         Kept in build.number next to this file (git-ignored) and increased after each
+         successful build. Starts at 0 when the file doesn't exist. -->
+    <LocalBuildNumberFile>$(MSBuildProjectDirectory)\build.number</LocalBuildNumberFile>
+    <LocalBuildNumber Condition="Exists('$(LocalBuildNumberFile)')">$([System.IO.File]::ReadAllText('$(LocalBuildNumberFile)').Trim())</LocalBuildNumber>
+    <LocalBuildNumber Condition="'$(LocalBuildNumber)' == ''">0</LocalBuildNumber>
+    <Version>$(ReleaseVersion).$(LocalBuildNumber)</Version>
+
+    <!-- SDK already sets: TargetFramework=net10.0-windows, Nullable, AllowUnsafeBlocks,
+         Platforms=x64, PlatformTarget=x64, LangVersion -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <Target Name="IncrementLocalBuildNumber" AfterTargets="Build">
+    <WriteLinesToFile File="$(LocalBuildNumberFile)" Lines="$([MSBuild]::Add($(LocalBuildNumber), 1))" Overwrite="true" />
+    <Message Importance="high" Text="HuntHop $(Version) built (next local build: $([MSBuild]::Add($(LocalBuildNumber), 1)))" />
+  </Target>
+</Project>
