@@ -49,6 +49,10 @@ public sealed class ConfigWindow : Window
                 ? $"At the {city} aetheryte: auto-hop possible"
                 : "Not at a Limsa / Gridania / Ul'dah aetheryte");
         }
+        if (_plugin.Hops.TripWorld is { } tripWorld)
+            ImGui.TextColored(Good, $"Travelling to {tripWorld}; spawn-point teleport after arrival");
+        if (_plugin.Zones.UnresolvedAetherytes > 0)
+            ImGui.TextColored(Muted, $"{_plugin.Zones.UnresolvedAetherytes} Faloop aetheryte(s) without a game match (see /xllog)");
         if (_plugin.Hops.PendingHop is { } pending)
             ImGui.TextColored(Good, $"Auto-hop to {pending.World} in {pending.SecondsLeft:0}s");
         if (_plugin.Hops.LatestSummary is { } latest)
@@ -91,6 +95,8 @@ public sealed class ConfigWindow : Window
         }
         Tip("Auto mode only. Stops a hop for an alert that sat in the queue (e.g. while you were in a duty).");
 
+        changed |= Check("Teleport to the aetheryte nearest the spawn after arriving", cfg.TeleportAfterHop, v => cfg.TeleportAfterHop = v);
+        Tip("Only when Faloop has reported the spawn point by the time you arrive; otherwise you stay in the city. If you're already on that world, [Go] just teleports.");
         changed |= Check("Allow Data Center Travel (slow; off = World Visit only)", cfg.AllowCrossDc, v => cfg.AllowCrossDc = v);
         changed |= Check("Allow while in a normal party (Lifestream leaves the party)", cfg.AllowInParty, v => cfg.AllowInParty = v);
         Tip("Cross-world parties are always allowed: World Visit keeps you in them.");

@@ -1,7 +1,7 @@
 {
   "Name": "HuntHop",
   "Author": "Kat",
-  "Punchline": "Faloop spawn alerts in chat, with a one-click world visit through Lifestream.",
-  "Description": "Receives Faloop spawn alerts from a browser userscript over localhost, posts them to chat with a [Go] link, and can world-visit through Lifestream when you are idle at a city aetheryte. Requires Lifestream.",
+  "Punchline": "Faloop spawn alerts in chat, with a one-click world visit and teleport to the spawn through Lifestream.",
+  "Description": "Receives Faloop spawn alerts from a browser userscript over localhost and posts them to chat with the spawn point as a map link and a [Go] link. [Go] (or Auto mode, when you are idle at a city aetheryte) world-visits through Lifestream, then teleports to the aetheryte nearest the spawn when the spawn point is known. Requires Lifestream.",
   "Tags": ["hunt", "faloop", "lifestream", "travel"]
 }

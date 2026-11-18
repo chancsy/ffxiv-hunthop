@@ -31,6 +31,8 @@ public class Configuration : IPluginConfiguration
     public int     MaxAlertAgeSeconds { get; set; } = 60;
     public bool    AllowCrossDc       { get; set; } = false;
     public bool    AllowInParty       { get; set; } = false;
+    /// <summary>After a world visit, teleport to the aetheryte nearest the spawn, only when the spawn point is known.</summary>
+    public bool    TeleportAfterHop   { get; set; } = true;
 
     // Filters (second pass after Faloop's own filters). Bools rather than sets so that
     // unticked defaults don't come back when the JSON is merged into a fresh instance.

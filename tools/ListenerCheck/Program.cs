@@ -82,6 +82,9 @@ while (!cts.IsCancellationRequested)
         Say(ConsoleColor.DarkGray, $"       title='{a.Title}' body='{a.Body.Replace('\n', ' ')}'");
     }
 
+    while (listener.Spots.TryDequeue(out var sp))
+        Say(ConsoleColor.Cyan, $"SPOT   {sp.Mob}{(sp.Instance > 0 ? $" i{sp.Instance}" : "")} @ {sp.World}  zone={sp.Zone ?? "?"} pois=[{string.Join(",", sp.Pois ?? [])}] location={sp.Location ?? "-"}");
+
     if (listener.LastPingUtc != lastPing)
     {
         lastPing = listener.LastPingUtc;

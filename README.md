@@ -24,6 +24,7 @@ This file covers what HuntHop does, setup and testing. Release notes are in [CHA
   - the cooldown since the last automatic hop has passed (default 5 min)
 
   It doesn't jump instantly. It posts `[HuntHop] Auto-hop to Aegis in 3s [Cancel]` and waits (default 3 s, adjustable). Click **[Cancel]** to stop it. When the wait ends, the safety checks run again.
+- **Teleport to the spawn.** After the world visit, HuntHop teleports you to the aetheryte nearest the reported spawn point, e.g. `[HuntHop] Teleporting to Palaka's Stand…`. It does this **only if Faloop knows the exact spawn point by the time you arrive**; otherwise you stay in the city (`Arrived on Belias; no teleport: spawn point not reported yet.`). Spawn points usually come with the first report, and the alert line then shows it as a **clickable map link** (opens the map at the spot), e.g. `Ruminator (S) @ Mandragora ⟨Mare Lamentorum ( 20.9 , 34.7 )⟩ near Sinus Lacrimarum [Go]`. A point reported later gets its own chat line with a map link. If you're already on that world, [Go] just teleports. You can turn this off in `/hunthop`.
 - **Safety checks before every trip:**
   - Lifestream is loaded and idle.
   - You're not in combat, a duty, a cutscene, or crafting or gathering.
@@ -36,20 +37,21 @@ This file covers what HuntHop does, setup and testing. Release notes are in [CHA
 - **Tells you when it stops.** If the Faloop tab is closed or the script stops for 5 minutes, chat warns you.
 
 What it doesn't do (yet):
-- teleport to the hunt zone after arriving
-- show the exact spawn spot
+- show the spawn point when the reporter wasn't sure, with several possible spots (no map link then, just the zone)
 - send alerts to your phone
 - cover A ranks (Faloop doesn't track them)
 
 ## How it works
 
 ```
-faloop.app tab ──(userscript: reads Faloop's in-page spawn alerts)──► http://localhost:47821/hunt
+faloop.app tab ──(userscript: in-page spawn alerts)──────────────────► http://localhost:47821/hunt
+               └─(userscript: spawn points from Faloop's live feed)──► http://localhost:47821/spot
                                                                          │
                                                        HuntHop plugin ◄──┘
                                                          ├─ chat: "Sansheya (S) @ Aegis in Shaaloani [Go]"
                                                          ├─ Click mode: [Go] or /hunthop go → Lifestream.ChangeWorld
-                                                         └─ Auto mode: guards → wait (3 s, [Cancel]) → guards again → travel
+                                                         ├─ Auto mode: guards → wait (3 s, [Cancel]) → guards again → travel
+                                                         └─ on arrival, if the spawn point is known → Lifestream.Teleport(nearest aetheryte)
 ```
 
 ## Layout
@@ -58,10 +60,10 @@ faloop.app tab ──(userscript: reads Faloop's in-page spawn alerts)──► 
 |---|---|
 | `plugin/HuntHop/` | [Dalamud](https://github.com/goatcorp/Dalamud) plugin (API 15, `Dalamud.NET.Sdk/15.0.0`) |
 | `userscript/faloop-hunthop.user.js` | Tampermonkey userscript for faloop.app (Violentmonkey: untested) |
-| `tools/gen-mobtable.js` | Regenerates `plugin/HuntHop/MobTable.cs` from Faloop's JS bundle |
+| `tools/gen-mobtable.js` | Regenerates `plugin/HuntHop/MobTable.cs` (S/SS/FATE mobs) and `ZoneTable.cs` (each zone's aetherytes and spawn points) from Faloop's JS bundle |
 | `tools/ListenerCheck/` | The plugin's listener as a console app, to check the browser side without the game |
 | `tests/userscript/` | jsdom tests for the userscript (`npm install && npm test`) |
-| `CHANGELOG.md` | Release notes (current: 0.1.0) |
+| `CHANGELOG.md` | Release notes (current: 0.2.0) |
 
 ## Requirements
 
@@ -117,7 +119,10 @@ Keep the Faloop tab open. It can be in the background; the script still sees Fal
 | `/hunthop test aegis` (or the Test button) | Chat: `[HuntHop] Sansheya (S) @ Aegis in Shaaloani [Go]` |
 | Click **[Go]** on another world of your DC | [Lifestream](https://github.com/NightmareXIV/Lifestream) starts the world visit (teleports to a city aetheryte first if you aren't at one) |
 | Tampermonkey menu → **HuntHop: send test (Sansheya @ a world you type)** → `aegis` | The same chat line, this time through the browser → localhost path |
-| Browser DevTools console on faloop.app | `[HuntHop] hooked (toasts + desktop); forwarding ON → localhost:47821` |
+| Browser DevTools console on faloop.app | `[HuntHop] hooked (toasts + desktop + spawn points); forwarding ON → localhost:47821` |
+| A real alert with a known spawn point | One line: mob @ world, a map link `<Zone> ( x , y )` and `near <aetheryte>`. Clicking the map link opens the map at the spot. |
+| [Go] on that alert | World visit, then about 2 s after arriving: `[HuntHop] Teleporting to <aetheryte>…` |
+| [Go] on an alert without a spawn point | World visit, then `[HuntHop] Arrived on <World>; no teleport: spawn point not reported yet.` |
 | A real Faloop spawn alert on the page | Its chat line appears within a second or two |
 | Close the Faloop tab for 5+ min | Chat: `[HuntHop] No contact from the Faloop userscript for 5 minutes. Is the faloop.app tab still open?` |
 | `/hunthop auto on`, stand at the Limsa aetheryte, test alert for another world | `[HuntHop] Auto-hop to <World> in 3s [Cancel]`, then it travels |
@@ -176,7 +181,11 @@ Faloop filters first: world method, expansions, and desktop notifications per ev
 
 - **English Faloop UI only.** The toast shows translated mob names. In another language, alerts show as "unknown mob" and never auto-hop.
 - **Breaks if Faloop changes its alert layout.** Chat lines stop arriving even though the userscript still pings. Update the toast markup in `tests/userscript`, then the selectors in the userscript, and rerun `npm test`.
-- **New mobs or expansions** need `tools/gen-mobtable.js` and a rebuild; until then they show as "unknown mob".
+- **New mobs or expansions** need `tools/gen-mobtable.js` and a rebuild; until then they show as "unknown mob" and have no spawn points.
+- **Spawn points depend on Faloop's live data feed.** The userscript reads Faloop's socket messages (`zoneId2`, `zonePoiIds`, `zonePoiId`, `location`). If Faloop renames those fields, the teleport silently stops, but alerts and world visits keep working. The Tampermonkey menu item **HuntHop: copy captured socket messages** copies the last 30 messages to check against.
+- **"Nearest" is a straight line** on the map between Faloop's spawn point and the zone's aetherytes; it ignores cliffs and water. Each aetheryte's teleport ID comes from the game's English data. Any that don't match are listed in `/xllog` and on the settings Status, and are never chosen.
+- **Several possible spawn points** (a reporter not sure which): HuntHop teleports only if they all have the same nearest aetheryte.
+- **Not attuned to that aetheryte:** the teleport fails with a chat message; you stay where you are.
 - **After a big game patch**, wait for a Dalamud update, then rebuild (raise the SDK version in `HuntHop.csproj` if needed).
 - **Japan same-region matching:** whether Lifestream treats the other Japanese data centers as World Visit targets is unconfirmed. If it doesn't, HuntHop reports them as needing Data Center Travel.
 - The Faloop tab must stay open; HuntHop has no data source of its own.

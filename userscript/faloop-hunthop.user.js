@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Faloop → HuntHop bridge
 // @namespace    hunthop
-// @version      0.2.0
-// @description  Forwards Faloop's new-spawn alerts (in-page toasts, and desktop notifications if on) to the HuntHop Dalamud plugin on localhost.
+// @version      0.3.1
+// @description  Forwards Faloop's new-spawn alerts (in-page toasts, and desktop notifications if on) and their spawn points to the HuntHop Dalamud plugin on localhost.
 // @match        https://faloop.app/*
 // @run-at       document-start
 // @sandbox      JavaScript
@@ -11,6 +11,7 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_setClipboard
 // @grant        unsafeWindow
 // @connect      localhost
 // ==/UserScript==
@@ -66,6 +67,12 @@
   }
 
   const recent = new Map();
+  // Spawn points from the live feed (key → spot) and spawns we alerted on (key → time); 1 h each.
+  const KEEP_MS = 60 * 60 * 1000;
+  const spots = new Map();
+  const alerted = new Map();
+  const prune = (map, now) => { for (const [k, v] of map) if (now - (v.at || v) > KEEP_MS) map.delete(k); };
+
   function send(alert, source) {
     const now = Date.now();
     for (const [k, t] of recent) if (now - t > DEDUP_MS) recent.delete(k);
@@ -73,8 +80,43 @@
     if (recent.has(key)) return;
     recent.set(key, now);
     alert.ts = now;
+    // The spawn point is usually known by now (it comes with the first report): send it inside
+    // the alert, so the plugin's alert line can already show it.
+    if (spots.has(key)) {
+      const s = spots.get(key).spot;
+      alert.spot = { zone: s.zone, pois: s.pois, location: s.location };
+    }
     console.info(LOG, `spawn (${source})`, alert);
     post('/hunt', alert);
+    prune(alerted, now);
+    alerted.set(key, now);
+  }
+
+  // A socket "spawn" / "spawn_location" report → { world, mob, instance, zone, pois, location }.
+  function spotFromReport(data) {
+    if (!data || !data.id || !data.data) return null;
+    if (data.action !== 'spawn' && data.action !== 'spawn_location') return null;
+    const d = data.data;
+    const pois = Array.isArray(d.zonePoiIds) ? d.zonePoiIds.filter(Number.isInteger)
+      : Number.isInteger(d.zonePoiId) ? [d.zonePoiId] : [];
+    const location = typeof d.location === 'string' ? d.location : null;
+    if (!pois.length && !location) return null;
+    return {
+      world: String(data.id.worldId || ''), mob: String(data.id.mobId || ''),
+      instance: Number(data.id.zoneInstance) || 0,
+      zone: typeof (d.zoneId2 || d.zoneId) === 'string' ? (d.zoneId2 || d.zoneId) : null,
+      pois: pois.slice(0, 64), location,
+    };
+  }
+
+  function onReport(data) {
+    const spot = spotFromReport(data);
+    if (!spot || !spot.world || !spot.mob) return;
+    const now = Date.now();
+    const key = `${spot.world}.${spot.mob}.${spot.instance}`;
+    prune(spots, now);
+    spots.set(key, { spot, at: now });
+    if (alerted.has(key)) post('/spot', spot); // update for a spawn already in game chat
   }
 
   // ── Source 1: in-page toasts ──────────────────────────────────────────────
@@ -135,6 +177,63 @@
     };
   }
 
+  // ── Source 3: Faloop's live data feed (socket.io on /messaging) ───────────
+  // Spawn points come from mob "report" messages, e.g.
+  //   {"type":"mob","subType":"report","data":{"action":"spawn","id":{"mobId":"sphatika",
+  //    "worldId":"belias"},"data":{"zoneId2":"thavnair","zonePoiIds":[1074],…}}}
+  // The feed carries every world; spots are only sent to the plugin for spawns we alerted on.
+  // The last 30 mob messages are also kept for the "copy captured socket messages" menu item.
+  const captured = [];
+  function parseSocketFrame(frame) {
+    // engine.io message "4" + socket.io event "2": 42[/namespace,][ackId]["message",{...}]
+    if (typeof frame !== 'string' || !frame.startsWith('42')) return null;
+    let rest = frame.slice(2);
+    if (rest.startsWith('/')) {
+      const comma = rest.indexOf(',');
+      if (comma < 0) return null;
+      rest = rest.slice(comma + 1);
+    }
+    rest = rest.replace(/^\d+/, '');
+    try {
+      const arr = JSON.parse(rest);
+      return Array.isArray(arr) ? { event: arr[0], payload: arr[1] } : null;
+    } catch (e) { return null; }
+  }
+  function captureFrames(raw, via) {
+    if (typeof raw !== 'string') return;
+    for (const frame of raw.split('\x1e')) { // polling batches packets with a record separator
+      const msg = parseSocketFrame(frame);
+      if (!msg || msg.event !== 'message' || !msg.payload || msg.payload.type !== 'mob') continue;
+      const entry = { at: new Date().toISOString(), via, payload: msg.payload };
+      captured.push(entry);
+      if (captured.length > 30) captured.shift();
+      if (msg.payload.subType === 'report') {
+        try { onReport(msg.payload.data); } catch (e) { console.warn(LOG, e); }
+      }
+    }
+  }
+  const SOCKET_RE = /\/messaging\/socket\.io\//;
+  if (win.WebSocket) {
+    win.WebSocket = new Proxy(win.WebSocket, {
+      construct(target, args) {
+        const ws = Reflect.construct(target, args);
+        try {
+          if (SOCKET_RE.test(String(args[0]))) ws.addEventListener('message', ev => captureFrames(ev.data, 'ws'));
+        } catch (e) { console.warn(LOG, e); }
+        return ws;
+      },
+    });
+  }
+  if (win.XMLHttpRequest) {
+    const xhrOpen = win.XMLHttpRequest.prototype.open;
+    win.XMLHttpRequest.prototype.open = function (method, url) {
+      try {
+        if (SOCKET_RE.test(String(url))) this.addEventListener('load', () => captureFrames(this.responseText, 'polling'));
+      } catch (e) { console.warn(LOG, e); }
+      return xhrOpen.apply(this, arguments);
+    };
+  }
+
   // Health ping so the plugin can warn when the tab is closed or the script stops.
   setInterval(() => post('/ping'), PING_MS);
   setTimeout(() => post('/ping'), 3000);
@@ -156,6 +255,10 @@
     GM_setValue('popups', !cfg.popups);
     alert(`Faloop's Windows pop-ups are now ${cfg.popups ? 'shown' : 'hidden (still forwarded)'}`);
   });
+  GM_registerMenuCommand('HuntHop: copy captured socket messages', () => {
+    GM_setClipboard(JSON.stringify(captured, null, 2), 'text');
+    alert(`Copied ${captured.length} captured Faloop mob message(s) to the clipboard.`);
+  });
   GM_registerMenuCommand('HuntHop: send test (Sansheya @ a world you type)', () => {
     const w = prompt('World name, e.g. aegis');
     if (w) {
@@ -164,5 +267,5 @@
     }
   });
 
-  console.info(LOG, `hooked (toasts + desktop); forwarding ${cfg.forward && cfg.token ? 'ON' : 'OFF (no token yet)'} → localhost:${cfg.port}`);
+  console.info(LOG, `hooked (toasts + desktop + spawn points); forwarding ${cfg.forward && cfg.token ? 'ON' : 'OFF (no token yet)'} → localhost:${cfg.port}`);
 })();

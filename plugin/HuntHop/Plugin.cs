@@ -28,6 +28,7 @@ public sealed class Plugin : IDalamudPlugin
     internal HuntListener  Listener   { get; }
     internal LifestreamIpc Lifestream { get; }
     internal HopService    Hops       { get; }
+    internal ZoneLookup    Zones      { get; }
 
     private readonly WindowSystem _windows = new("HuntHop");
     private readonly ConfigWindow _configWindow;
@@ -42,7 +43,8 @@ public sealed class Plugin : IDalamudPlugin
 
         Listener   = new HuntListener(() => Config.Token, m => Log.Info(m), m => Log.Warning(m));
         Lifestream = new LifestreamIpc(pluginInterface);
-        Hops       = new HopService(Config, Listener, Lifestream);
+        Zones      = new ZoneLookup();
+        Hops       = new HopService(Config, Listener, Lifestream, new SpawnSpots(Zones));
 
         if (Config.ListenerEnabled)
             Listener.Start(Config.Port);

@@ -3,13 +3,13 @@
     <!-- Plugin metadata (consumed by DalamudPackager at build time) -->
     <Name>HuntHop</Name>
     <Author>Kat</Author>
-    <Punchline>Faloop spawn alerts in chat, with a one-click world visit through Lifestream.</Punchline>
-    <Description>Receives Faloop spawn alerts from a browser userscript over localhost, posts them to chat with a [Go] link, and can world-visit through Lifestream when you are idle at a city aetheryte.</Description>
+    <Punchline>Faloop spawn alerts in chat, with a one-click world visit and teleport to the spawn through Lifestream.</Punchline>
+    <Description>Receives Faloop spawn alerts from a browser userscript over localhost and posts them to chat with the spawn point as a map link and a [Go] link. [Go] (or Auto mode, when you are idle at a city aetheryte) world-visits through Lifestream, then teleports to the aetheryte nearest the spawn when the spawn point is known.</Description>
 
     <AssemblyName>HuntHop</AssemblyName>
 
     <!-- Release version (MAJOR.MINOR.PATCH): the only version git and CHANGELOG.md track. -->
-    <ReleaseVersion>0.1.0</ReleaseVersion>
+    <ReleaseVersion>0.2.0</ReleaseVersion>
 
     <!-- Local build number = 4th version segment, so Dalamud treats every dev build as new.
          Kept in build.number next to this file (git-ignored) and increased after each

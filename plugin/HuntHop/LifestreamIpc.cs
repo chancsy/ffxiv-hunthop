@@ -23,6 +23,7 @@ internal sealed class LifestreamIpc
     private readonly ICallGateSubscriber<string, bool> _canVisitCrossDc;
     private readonly ICallGateSubscriber<string, bool> _changeWorld;
     private readonly ICallGateSubscriber<object>       _abort;
+    private readonly ICallGateSubscriber<uint, byte, bool> _teleport;
 
     public LifestreamIpc(IDalamudPluginInterface pi)
     {
@@ -32,7 +33,11 @@ internal sealed class LifestreamIpc
         _canVisitCrossDc    = pi.GetIpcSubscriber<string, bool>("Lifestream.CanVisitCrossDC");
         _changeWorld        = pi.GetIpcSubscriber<string, bool>("Lifestream.ChangeWorld");
         _abort              = pi.GetIpcSubscriber<object>("Lifestream.Abort");
+        _teleport           = pi.GetIpcSubscriber<uint, byte, bool>("Lifestream.Teleport");
     }
+
+    /// <summary>Teleport to an Aetheryte sheet row (sub-index 0 = the aetheryte itself). null = Lifestream not loaded.</summary>
+    public bool? Teleport(uint aetheryteRowId) => Try(() => _teleport.InvokeFunc(aetheryteRowId, 0));
 
     /// <summary>null = Lifestream not loaded.</summary>
     public bool? IsBusy() => Try(() => _isBusy.InvokeFunc());

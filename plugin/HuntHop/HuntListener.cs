@@ -17,8 +17,25 @@ public sealed class HuntAlert
     [JsonPropertyName("body")]     public string Body     { get; set; } = string.Empty;
     /// <summary>Browser time (Unix ms) when Faloop raised the notification. 0 = unknown.</summary>
     [JsonPropertyName("ts")]       public long   Ts       { get; set; }
+    /// <summary>Spawn point, when the userscript already knows it at alert time (world/mob/instance are filled in from the alert).</summary>
+    [JsonPropertyName("spot")]     public SpotUpdate? Spot { get; set; }
     /// <summary>True for alerts made by the plugin's own test button / command.</summary>
     [JsonIgnore]                   public bool   IsTest   { get; set; }
+}
+
+/// <summary>
+/// Where an alerted spawn is, from Faloop's live data (socket "spawn" / "spawn_location" reports).
+/// Either an exact <see cref="Location"/> ("x,y" map-texture pixels, needs a zone) or Faloop
+/// spawn-point ids in <see cref="Pois"/>.
+/// </summary>
+public sealed class SpotUpdate
+{
+    [JsonPropertyName("world")]    public string  World    { get; set; } = string.Empty;
+    [JsonPropertyName("mob")]      public string  Mob      { get; set; } = string.Empty;
+    [JsonPropertyName("instance")] public int     Instance { get; set; }
+    [JsonPropertyName("zone")]     public string? Zone     { get; set; }
+    [JsonPropertyName("pois")]     public int[]?  Pois     { get; set; }
+    [JsonPropertyName("location")] public string? Location { get; set; }
 }
 
 /// <summary>
@@ -27,6 +44,7 @@ public sealed class HuntAlert
 /// for the game thread to drain.
 ///
 ///   POST /hunt  (JSON HuntAlert)  → 204, queued
+///   POST /spot  (JSON SpotUpdate) → 204, queued
 ///   POST /ping                    → 204, updates LastPingUtc
 /// Every request needs the header  X-HuntHop-Token: &lt;token&gt;.
 /// </summary>
@@ -37,6 +55,7 @@ public sealed class HuntListener : IDisposable
     private const int MaxQueue = 64;
 
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+    private static readonly System.Text.RegularExpressions.Regex LocationRe = new(@"^\d{1,4}(\.\d+)?,\s?\d{1,4}(\.\d+)?$");
 
     private readonly Func<string> _token;
     private readonly Action<string> _info;
@@ -46,6 +65,7 @@ public sealed class HuntListener : IDisposable
     private CancellationTokenSource? _cts;
 
     public ConcurrentQueue<HuntAlert> Alerts { get; } = new();
+    public ConcurrentQueue<SpotUpdate> Spots { get; } = new();
     public DateTime? LastPingUtc  { get; private set; }
     public DateTime? LastAlertUtc { get; private set; }
     public string?   LastError    { get; private set; }
@@ -148,12 +168,34 @@ public sealed class HuntListener : IDisposable
                 try { alert = JsonSerializer.Deserialize<HuntAlert>(body, JsonOpts); }
                 catch (JsonException) { return 400; }
                 if (alert == null || !IsSlug(alert.World) || !IsSlug(alert.Mob)) return 400;
+                if (alert.Spot != null)
+                {
+                    alert.Spot.World = alert.World;
+                    alert.Spot.Mob = alert.Mob;
+                    alert.Spot.Instance = alert.Instance;
+                    if (!IsValidSpot(alert.Spot)) return 400;
+                }
 
                 alert.Title = Clip(alert.Title, 120);
                 alert.Body  = Clip(alert.Body, 300);
                 alert.IsTest = false;
                 Enqueue(alert);
                 LastPingUtc = DateTime.UtcNow; // an alert also proves the userscript is alive
+                return 204;
+
+            case "/spot":
+                if (req.ContentLength64 > MaxBodyBytes) return 413;
+                var spotBody = ReadBody(req);
+                if (spotBody == null) return 413;
+
+                SpotUpdate? spot;
+                try { spot = JsonSerializer.Deserialize<SpotUpdate>(spotBody, JsonOpts); }
+                catch (JsonException) { return 400; }
+                if (spot == null || !IsValidSpot(spot)) return 400;
+
+                while (Spots.Count >= MaxQueue && Spots.TryDequeue(out _)) { }
+                Spots.Enqueue(spot);
+                LastPingUtc = DateTime.UtcNow;
                 return 204;
 
             default:
@@ -189,6 +231,13 @@ public sealed class HuntListener : IDisposable
         }
         return Encoding.UTF8.GetString(buffer, 0, total);
     }
+
+    private static bool IsValidSpot(SpotUpdate s) =>
+        IsSlug(s.World) && IsSlug(s.Mob)
+        && (string.IsNullOrEmpty(s.Zone) || IsSlug(s.Zone))
+        && s.Pois is not { Length: > 64 }
+        && (string.IsNullOrEmpty(s.Location) || LocationRe.IsMatch(s.Location))
+        && (s.Pois is { Length: > 0 } || !string.IsNullOrEmpty(s.Location));
 
     private static bool IsSlug(string? s) =>
         !string.IsNullOrEmpty(s) && s.Length <= 64 && s.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '_' or '-');
