@@ -85,6 +85,29 @@ internal sealed class ZoneLookup
         return best;
     }
 
+    /// <summary>A zone's aetheryte by its Faloop name, if it has a game teleport id.</summary>
+    public AetheryteTarget? AetheryteByName(ZoneInfo zone, string name)
+    {
+        foreach (var ae in zone.Aetherytes)
+            if (string.Equals(ae.Name, name, StringComparison.OrdinalIgnoreCase)
+                && _targets.TryGetValue((zone.Id, ae.PoiId), out var target))
+                return target;
+        return null;
+    }
+
+    /// <summary>The zone's spawn point closest to a position, if within <paramref name="maxPixels"/>.</summary>
+    public static int? NearestSpawnPoint(ZoneInfo zone, int x, int y, int maxPixels)
+    {
+        int? best = null;
+        var bestDist = (double)maxPixels * maxPixels;
+        for (var i = 0; i + 2 < zone.SpawnPoints.Length; i += 3)
+        {
+            var d = Math.Pow(zone.SpawnPoints[i + 1] - x, 2) + Math.Pow(zone.SpawnPoints[i + 2] - y, 2);
+            if (d <= bestDist) { bestDist = d; best = zone.SpawnPoints[i]; }
+        }
+        return best;
+    }
+
     /// <summary>Game TerritoryType + Map of a Faloop zone, for a map link.</summary>
     public bool TryGetMap(string zoneId, out uint territory, out uint map)
     {

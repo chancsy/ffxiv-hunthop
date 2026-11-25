@@ -33,6 +33,10 @@ public class Configuration : IPluginConfiguration
     public bool    AllowInParty       { get; set; } = false;
     /// <summary>After a world visit, teleport to the aetheryte nearest the spawn, only when the spawn point is known.</summary>
     public bool    TeleportAfterHop   { get; set; } = true;
+    /// <summary>After that teleport, switch to the spawn's instance through Lifestream (instanced zones only).</summary>
+    public bool    SwitchInstance     { get; set; } = true;
+    /// <summary>Amh Araeng: teleport to Twine for the south-west spawn points the trolley reaches faster (see RouteOverrides).</summary>
+    public bool    UseTrolleyAmhAraeng { get; set; } = true;
 
     // Filters (second pass after Faloop's own filters). Bools rather than sets so that
     // unticked defaults don't come back when the JSON is merged into a fresh instance.

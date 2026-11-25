@@ -9,7 +9,7 @@
     <AssemblyName>HuntHop</AssemblyName>
 
     <!-- Release version (MAJOR.MINOR.PATCH): the only version git and CHANGELOG.md track. -->
-    <ReleaseVersion>0.2.0</ReleaseVersion>
+    <ReleaseVersion>0.3.0</ReleaseVersion>
 
     <!-- Local build number = 4th version segment, so Dalamud treats every dev build as new.
          Kept in build.number next to this file (git-ignored) and increased after each

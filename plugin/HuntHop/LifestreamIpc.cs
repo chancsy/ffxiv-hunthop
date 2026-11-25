@@ -24,6 +24,9 @@ internal sealed class LifestreamIpc
     private readonly ICallGateSubscriber<string, bool> _changeWorld;
     private readonly ICallGateSubscriber<object>       _abort;
     private readonly ICallGateSubscriber<uint, byte, bool> _teleport;
+    private readonly ICallGateSubscriber<bool>         _canChangeInstance;
+    private readonly ICallGateSubscriber<int>          _getCurrentInstance;
+    private readonly ICallGateSubscriber<int, object>  _changeInstance;
 
     public LifestreamIpc(IDalamudPluginInterface pi)
     {
@@ -34,6 +37,9 @@ internal sealed class LifestreamIpc
         _changeWorld        = pi.GetIpcSubscriber<string, bool>("Lifestream.ChangeWorld");
         _abort              = pi.GetIpcSubscriber<object>("Lifestream.Abort");
         _teleport           = pi.GetIpcSubscriber<uint, byte, bool>("Lifestream.Teleport");
+        _canChangeInstance  = pi.GetIpcSubscriber<bool>("Lifestream.CanChangeInstance");
+        _getCurrentInstance = pi.GetIpcSubscriber<int>("Lifestream.GetCurrentInstance");
+        _changeInstance     = pi.GetIpcSubscriber<int, object>("Lifestream.ChangeInstance");
     }
 
     /// <summary>Teleport to an Aetheryte sheet row (sub-index 0 = the aetheryte itself). null = Lifestream not loaded.</summary>
@@ -53,6 +59,22 @@ internal sealed class LifestreamIpc
     /// to a city aetheryte first if you aren't at one. Returns false if it refused (busy / unknown world).
     /// </summary>
     public bool? ChangeWorld(string world) => Try(() => _changeWorld.InvokeFunc(world));
+
+    /// <summary>
+    /// True when Lifestream can switch instance right now: idle, standing within ~11 yalms of the
+    /// zone's aetheryte, in an instanced zone, and its instance switcher setting is on (default).
+    /// </summary>
+    public bool? CanChangeInstance() => Try(() => _canChangeInstance.InvokeFunc());
+
+    /// <summary>Current public instance (1–9), 0 when the zone isn't split. null = Lifestream not loaded.</summary>
+    public int? CurrentInstance() => Try(() => _getCurrentInstance.InvokeFunc());
+
+    /// <summary>Queues Lifestream's instance switch (aetheryte → Travel to Instanced Area → number; it repeats until it lands).</summary>
+    public bool ChangeInstance(int number)
+    {
+        try { _changeInstance.InvokeAction(number); return true; }
+        catch { return false; }
+    }
 
     public bool Abort()
     {

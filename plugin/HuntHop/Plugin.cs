@@ -44,7 +44,7 @@ public sealed class Plugin : IDalamudPlugin
         Listener   = new HuntListener(() => Config.Token, m => Log.Info(m), m => Log.Warning(m));
         Lifestream = new LifestreamIpc(pluginInterface);
         Zones      = new ZoneLookup();
-        Hops       = new HopService(Config, Listener, Lifestream, new SpawnSpots(Zones));
+        Hops       = new HopService(Config, Listener, Lifestream, new SpawnSpots(Zones, () => Config.UseTrolleyAmhAraeng));
 
         if (Config.ListenerEnabled)
             Listener.Start(Config.Port);

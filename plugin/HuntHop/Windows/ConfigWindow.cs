@@ -1,5 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 
 namespace HuntHop.Windows;
@@ -49,8 +50,8 @@ public sealed class ConfigWindow : Window
                 ? $"At the {city} aetheryte: auto-hop possible"
                 : "Not at a Limsa / Gridania / Ul'dah aetheryte");
         }
-        if (_plugin.Hops.TripWorld is { } tripWorld)
-            ImGui.TextColored(Good, $"Travelling to {tripWorld}; spawn-point teleport after arrival");
+        if (_plugin.Hops.TripStatus is { } trip)
+            ImGui.TextColored(Good, trip);
         if (_plugin.Zones.UnresolvedAetherytes > 0)
             ImGui.TextColored(Muted, $"{_plugin.Zones.UnresolvedAetherytes} Faloop aetheryte(s) without a game match (see /xllog)");
         if (_plugin.Hops.PendingHop is { } pending)
@@ -97,6 +98,15 @@ public sealed class ConfigWindow : Window
 
         changed |= Check("Teleport to the aetheryte nearest the spawn after arriving", cfg.TeleportAfterHop, v => cfg.TeleportAfterHop = v);
         Tip("Only when Faloop has reported the spawn point by the time you arrive; otherwise you stay in the city. If you're already on that world, [Go] just teleports.");
+        using (ImRaii.Disabled(!cfg.TeleportAfterHop))
+        {
+            ImGui.Indent();
+            changed |= Check("Then switch to the spawn's instance", cfg.SwitchInstance, v => cfg.SwitchInstance = v);
+            Tip("In zones split into instances: after the teleport, Lifestream switches to the instance Faloop reported (aetheryte → Travel to Instanced Area).");
+            changed |= Check("Use Trolley in Amh Araeng", cfg.UseTrolleyAmhAraeng, v => cfg.UseTrolleyAmhAraeng = v);
+            Tip("Two south-west Amh Araeng spawn points, (19.7, 29.0) and (17.0, 31.7), teleport to Twine instead of The Inn at Journey's Head; take the trolley from there.");
+            ImGui.Unindent();
+        }
         changed |= Check("Allow Data Center Travel (slow; off = World Visit only)", cfg.AllowCrossDc, v => cfg.AllowCrossDc = v);
         changed |= Check("Allow while in a normal party (Lifestream leaves the party)", cfg.AllowInParty, v => cfg.AllowInParty = v);
         Tip("Cross-world parties are always allowed: World Visit keeps you in them.");

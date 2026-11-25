@@ -6,6 +6,25 @@ The plugin's release version is `ReleaseVersion` in `plugin/HuntHop/HuntHop.cspr
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-25
+
+Instance switch and the Amh Araeng trolley.
+
+Components: plugin `HuntHop` 0.3.0, userscript `faloop-hunthop.user.js` 0.3.1 (unchanged; no reinstall needed).
+
+### Added
+
+- **Instance switch after the spawn teleport.** In zones split into instances, `Lifestream.ChangeInstance` takes you to the instance Faloop reported once the teleport lands. It needs `Lifestream.CanChangeInstance`: you're next to the aetheryte and Lifestream's instance switcher is on (its default). Setting: *Then switch to the spawn's instance* (on by default). `/hunthop stop` also cancels it.
+- **Use Trolley in Amh Araeng** (setting, on by default). Spawn points 966 (19.7, 29.0) and 969 (17.0, 31.7) teleport to Twine instead of The Inn at Journey's Head, since the trolley from Twine is faster. An exact reported position within about 0.6 map units of either counts too. The rule is in `plugin/HuntHop/RouteOverrides.cs`.
+
+### Verified in game
+
+- *Use Trolley in Amh Araeng*: a test alert for Tarchia at spawn point 966 showed `near Twine`, and [Go] teleported to Twine.
+
+### Not yet verified in game
+
+- The instance switch.
+
 ## [0.2.0] - 2026-11-19
 
 Spawn-point teleport and map links.
@@ -67,5 +86,6 @@ Components: plugin `HuntHop` 0.1.0, userscript `faloop-hunthop.user.js` 0.2.0.
 - Auto mode hopped from a city aetheryte, the 3 s delay and [Cancel] worked, and the cooldown blocked the next hop.
 
 [Unreleased]: #unreleased
+[0.3.0]: #030---2026-11-25
 [0.2.0]: #020---2026-11-19
 [0.1.0]: #010---2026-11-19

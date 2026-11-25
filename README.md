@@ -25,6 +25,8 @@ This file covers what HuntHop does, setup and testing. Release notes are in [CHA
 
   It doesn't jump instantly. It posts `[HuntHop] Auto-hop to Aegis in 3s [Cancel]` and waits (default 3 s, adjustable). Click **[Cancel]** to stop it. When the wait ends, the safety checks run again.
 - **Teleport to the spawn.** After the world visit, HuntHop teleports you to the aetheryte nearest the reported spawn point, e.g. `[HuntHop] Teleporting to Palaka's Stand…`. It does this **only if Faloop knows the exact spawn point by the time you arrive**; otherwise you stay in the city (`Arrived on Belias; no teleport: spawn point not reported yet.`). Spawn points usually come with the first report, and the alert line then shows it as a **clickable map link** (opens the map at the spot), e.g. `Ruminator (S) @ Mandragora ⟨Mare Lamentorum ( 20.9 , 34.7 )⟩ near Sinus Lacrimarum [Go]`. A point reported later gets its own chat line with a map link. If you're already on that world, [Go] just teleports. You can turn this off in `/hunthop`.
+- **The right instance.** In a zone split into instances, after that teleport HuntHop has Lifestream switch you to the instance Faloop reported, e.g. `[HuntHop] Switching to instance 2…`. You land next to the aetheryte, which is where the switch is made. Setting: *Then switch to the spawn's instance* (on by default).
+- **Trolley in Amh Araeng.** Two south-west spawn points, (19.7, 29.0) and (17.0, 31.7), teleport to **Twine** instead of The Inn at Journey's Head, because riding the trolley from Twine is faster. The alert line then says `near Twine`. Setting: *Use Trolley in Amh Araeng* (on by default).
 - **Safety checks before every trip:**
   - Lifestream is loaded and idle.
   - You're not in combat, a duty, a cutscene, or crafting or gathering.
@@ -51,7 +53,8 @@ faloop.app tab ──(userscript: in-page spawn alerts)────────�
                                                          ├─ chat: "Sansheya (S) @ Aegis in Shaaloani [Go]"
                                                          ├─ Click mode: [Go] or /hunthop go → Lifestream.ChangeWorld
                                                          ├─ Auto mode: guards → wait (3 s, [Cancel]) → guards again → travel
-                                                         └─ on arrival, if the spawn point is known → Lifestream.Teleport(nearest aetheryte)
+                                                         ├─ on arrival, if the spawn point is known → Lifestream.Teleport(nearest aetheryte)
+                                                         └─ then, in an instanced zone → Lifestream.ChangeInstance(n)
 ```
 
 ## Layout
@@ -63,7 +66,7 @@ faloop.app tab ──(userscript: in-page spawn alerts)────────�
 | `tools/gen-mobtable.js` | Regenerates `plugin/HuntHop/MobTable.cs` (S/SS/FATE mobs) and `ZoneTable.cs` (each zone's aetherytes and spawn points) from Faloop's JS bundle |
 | `tools/ListenerCheck/` | The plugin's listener as a console app, to check the browser side without the game |
 | `tests/userscript/` | jsdom tests for the userscript (`npm install && npm test`) |
-| `CHANGELOG.md` | Release notes (current: 0.2.0) |
+| `CHANGELOG.md` | Release notes (current: 0.3.0) |
 
 ## Requirements
 
@@ -124,6 +127,8 @@ Keep the Faloop tab open. It can be in the background; the script still sees Fal
 | [Go] on that alert | World visit, then about 2 s after arriving: `[HuntHop] Teleporting to <aetheryte>…` |
 | [Go] on an alert without a spawn point | World visit, then `[HuntHop] Arrived on <World>; no teleport: spawn point not reported yet.` |
 | A real Faloop spawn alert on the page | Its chat line appears within a second or two |
+| An Amh Araeng alert at (19.7, 29.0) or (17.0, 31.7), *Use Trolley in Amh Araeng* on | The alert line says `near Twine`; [Go] ends with `[HuntHop] Teleporting to Twine…` |
+| (untested in game) [Go] on an alert in an instanced zone, spawn point known | World visit, teleport, then `[HuntHop] Switching to instance <n>…` and Lifestream's instance switch at the aetheryte |
 | Close the Faloop tab for 5+ min | Chat: `[HuntHop] No contact from the Faloop userscript for 5 minutes. Is the faloop.app tab still open?` |
 | `/hunthop auto on`, stand at the Limsa aetheryte, test alert for another world | `[HuntHop] Auto-hop to <World> in 3s [Cancel]`, then it travels |
 | The same, but click **[Cancel]** within 3 s | `[HuntHop] Auto-hop to <World> cancelled.` and no travel |
@@ -143,7 +148,7 @@ Keep the Faloop tab open. It can be in the background; the script still sees Fal
 | `/hunthop` | Settings window |
 | `/hunthop go` | Travel to the latest alert's world (bind it to a macro for a hotkey) |
 | `/hunthop auto on` / `off` | Switch between automatic and click-to-go |
-| `/hunthop stop` | Cancel a waiting auto-hop and abort a running [Lifestream](https://github.com/NightmareXIV/Lifestream) trip |
+| `/hunthop stop` | Cancel a waiting auto-hop, the teleport or instance switch still to come, and abort a running [Lifestream](https://github.com/NightmareXIV/Lifestream) trip |
 | `/hunthop test <world>` | Fake alert (Sansheya) for that world |
 
 ## Guards
@@ -183,9 +188,10 @@ Faloop filters first: world method, expansions, and desktop notifications per ev
 - **Breaks if Faloop changes its alert layout.** Chat lines stop arriving even though the userscript still pings. Update the toast markup in `tests/userscript`, then the selectors in the userscript, and rerun `npm test`.
 - **New mobs or expansions** need `tools/gen-mobtable.js` and a rebuild; until then they show as "unknown mob" and have no spawn points.
 - **Spawn points depend on Faloop's live data feed.** The userscript reads Faloop's socket messages (`zoneId2`, `zonePoiIds`, `zonePoiId`, `location`). If Faloop renames those fields, the teleport silently stops, but alerts and world visits keep working. The Tampermonkey menu item **HuntHop: copy captured socket messages** copies the last 30 messages to check against.
-- **"Nearest" is a straight line** on the map between Faloop's spawn point and the zone's aetherytes; it ignores cliffs and water. Each aetheryte's teleport ID comes from the game's English data. Any that don't match are listed in `/xllog` and on the settings Status, and are never chosen.
+- **"Nearest" is a straight line** on the map between Faloop's spawn point and the zone's aetherytes; it ignores cliffs, water and shortcuts. The one exception is the Amh Araeng trolley rule, in `plugin/HuntHop/RouteOverrides.cs`. Each aetheryte's teleport ID comes from the game's English data. Any that don't match are listed in `/xllog` and on the settings Status, and are never chosen.
 - **Several possible spawn points** (a reporter not sure which): HuntHop teleports only if they all have the same nearest aetheryte.
 - **Not attuned to that aetheryte:** the teleport fails with a chat message; you stay where you are.
+- **Instance switch** uses [Lifestream](https://github.com/NightmareXIV/Lifestream)'s instance switcher. It needs you within about 11 yalms of the zone's aetheryte (a teleport puts you there) and Lifestream's instance switcher setting on (its default). Otherwise chat says why and you stay in your instance.
 - **After a big game patch**, wait for a Dalamud update, then rebuild (raise the SDK version in `HuntHop.csproj` if needed).
 - **Japan same-region matching:** whether Lifestream treats the other Japanese data centers as World Visit targets is unconfirmed. If it doesn't, HuntHop reports them as needing Data Center Travel.
 - The Faloop tab must stay open; HuntHop has no data source of its own.

@@ -21,9 +21,15 @@ internal sealed class SpawnSpots
     private sealed record Spot(string? Zone, int[] Pois, string? Location, DateTime AtUtc);
 
     private readonly ZoneLookup _zones;
+    private readonly Func<bool> _useTrolley;
     private readonly Dictionary<string, Spot> _spots = [];
 
-    public SpawnSpots(ZoneLookup zones) => _zones = zones;
+    /// <param name="useTrolley">The "Use Trolley in Amh Araeng" setting (see <see cref="RouteOverrides"/>).</param>
+    public SpawnSpots(ZoneLookup zones, Func<bool> useTrolley)
+    {
+        _zones = zones;
+        _useTrolley = useTrolley;
+    }
 
     public static string Key(string world, string mob, int instance) => $"{world}.{mob}.{instance}";
 
@@ -45,22 +51,22 @@ internal sealed class SpawnSpots
         if (!_spots.TryGetValue(key, out var s)) { reason = "spawn point not reported yet"; return false; }
 
         // Candidate positions: an exact location (needs the zone) or Faloop spawn-point ids.
-        var candidates = new List<(ZoneInfo Zone, int X, int Y)>();
+        var candidates = new List<(ZoneInfo Zone, int? PoiId, int X, int Y)>();
         if (s.Location is { } loc && TryParsePoint(loc, out var lx, out var ly))
         {
             var zoneId = s.Zone ?? (MobTable.TryGet(mobId, out var mob) && mob.Zones.Length == 1 ? mob.Zones[0] : null);
             if (zoneId != null && _zones.TryGetZone(zoneId, out var zone))
-                candidates.Add((zone, lx, ly));
+                candidates.Add((zone, null, lx, ly));
         }
         if (candidates.Count == 0)
             foreach (var poi in s.Pois)
                 if (_zones.TryGetSpawnPoint(poi, out var zone, out var x, out var y))
-                    candidates.Add((zone, x, y));
+                    candidates.Add((zone, poi, x, y));
 
         if (candidates.Count == 0) { reason = "spawn point not reported yet"; return false; }
 
         var targets = candidates
-            .Select(c => (c, Target: _zones.NearestAetheryte(c.Zone, c.X, c.Y)))
+            .Select(c => (c, Target: PickAetheryte(c.Zone, c.PoiId, c.X, c.Y)))
             .ToList();
         if (targets.Any(t => t.Target == null)) { reason = "no known aetheryte in that zone"; return false; }
 
@@ -80,6 +86,22 @@ internal sealed class SpawnSpots
         spot = new ResolvedSpot(first.Target!, where, map);
         reason = string.Empty;
         return true;
+    }
+
+    /// <summary>
+    /// The teleport for one spawn position: a hand-picked route when its setting is on (an exact
+    /// position counts as the spawn point it sits on), otherwise the straight-line nearest aetheryte.
+    /// </summary>
+    private AetheryteTarget? PickAetheryte(ZoneInfo zone, int? poiId, int x, int y)
+    {
+        if (zone.Id == RouteOverrides.AmhAraeng && _useTrolley())
+        {
+            var id = poiId ?? ZoneLookup.NearestSpawnPoint(zone, x, y, RouteOverrides.SnapPixels);
+            if (id is { } p && RouteOverrides.AmhAraengTrolley.TryGetValue(p, out var name)
+                && _zones.AetheryteByName(zone, name) is { } target)
+                return target;
+        }
+        return _zones.NearestAetheryte(zone, x, y);
     }
 
     /// <summary>Faloop's "x,y" map-texture pixels (same space as spawn points); decimals allowed.</summary>

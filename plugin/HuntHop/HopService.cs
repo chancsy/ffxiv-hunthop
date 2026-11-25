@@ -38,7 +38,10 @@ internal sealed class HopService : IDisposable
     ];
 
     private static readonly TimeSpan TripTimeout = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan ZoneTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan ArrivalSettle = TimeSpan.FromSeconds(2);
+    /// <summary>Lets the teleport cast start before the instance stage looks at where you are.</summary>
+    private static readonly TimeSpan TeleportGrace = TimeSpan.FromSeconds(3);
 
     private readonly Configuration _config;
     private readonly HuntListener  _listener;
@@ -59,10 +62,20 @@ internal sealed class HopService : IDisposable
     /// <summary>Alerts shown in chat (key → target), so later spawn-point updates can be announced.</summary>
     private readonly Dictionary<string, (Target Target, DateTime AtUtc, uint? AnnouncedAetheryte)> _alerted = [];
 
-    /// <summary>A world visit in progress; on arrival, teleport to the aetheryte nearest the spawn if known.</summary>
-    private sealed class Trip(Target target)
+    private enum TripStage
+    {
+        /// <summary>World visit running; on arrival, teleport to the aetheryte nearest the spawn (if known).</summary>
+        Arrive,
+        /// <summary>Teleport running; once in the spawn's zone, switch to the spawn's instance.</summary>
+        Instance,
+    }
+
+    private sealed class Trip(Target target, TripStage stage, uint territory = 0)
     {
         public Target Target { get; } = target;
+        public TripStage Stage { get; } = stage;
+        /// <summary>Instance stage: the TerritoryType the teleport lands in.</summary>
+        public uint Territory { get; } = territory;
         public DateTime StartedUtc { get; } = DateTime.UtcNow;
         public DateTime? SettledSinceUtc { get; set; }
     }
@@ -81,8 +94,13 @@ internal sealed class HopService : IDisposable
         _pendingHop is { } p ? (p.Target.World, Math.Max(0, (p.DueUtc - DateTime.UtcNow).TotalSeconds)) : null;
     private Target? _latest;
     public string?   LatestSummary => _latest?.Label;
-    /// <summary>For the settings window: world of a trip waiting to arrive before teleporting.</summary>
-    public string?   TripWorld => _trip?.Target.World;
+    /// <summary>For the settings window: what the running trip is waiting for, if any.</summary>
+    public string? TripStatus => _trip switch
+    {
+        { Stage: TripStage.Arrive } t   => $"Travelling to {t.Target.World}; spawn-point teleport after arrival",
+        { Stage: TripStage.Instance } t => $"Teleporting; switching to instance {t.Target.Instance} after",
+        _ => null,
+    };
 
     public HopService(Configuration config, HuntListener listener, LifestreamIpc lifestream, SpawnSpots spots)
     {
@@ -168,32 +186,68 @@ internal sealed class HopService : IDisposable
     }
 
     /// <summary>
-    /// After a world visit: once you're on the target world, not zoning and Lifestream is idle
-    /// (settled for a moment), teleport to the aetheryte nearest the spawn, only if the spawn
-    /// point is known by then.
+    /// Arrive stage: once you're on the target world, not zoning and Lifestream is idle (settled for a
+    /// moment), teleport to the aetheryte nearest the spawn, only if the spawn point is known by then.
+    /// Instance stage: once that teleport has landed in the spawn's zone, switch to its instance.
     /// </summary>
     private void RunTrip()
     {
         if (_trip is not { } t) return;
         var now = DateTime.UtcNow;
-        if (now - t.StartedUtc > TripTimeout)
+        var arriving = t.Stage == TripStage.Arrive;
+        if (now - t.StartedUtc > (arriving ? TripTimeout : ZoneTimeout))
         {
             _trip = null;
-            PrintError($"Didn't arrive on {t.Target.World} within 5 minutes; no teleport.");
+            PrintError(arriving
+                ? $"Didn't arrive on {t.Target.World} within 5 minutes; no teleport."
+                : "The teleport didn't land within 2 minutes; no instance switch.");
             return;
         }
+        if (!arriving && now - t.StartedUtc < TeleportGrace) return;
 
-        var player = Plugin.ObjectTable.LocalPlayer;
-        var arrived = player != null
-            && string.Equals(player.CurrentWorld.ValueNullable?.Name.ToString(), t.Target.World, StringComparison.OrdinalIgnoreCase)
+        var there = arriving ? IsOnWorld(t.Target.World) : Plugin.ClientState.TerritoryType == t.Territory;
+        var ready = there
+            && Plugin.ObjectTable.LocalPlayer != null
             && _lifestream.IsBusy() == false
             && !BlockingConditions.Any(c => Plugin.Condition[c.Flag]);
-        if (!arrived) { t.SettledSinceUtc = null; return; }
+        if (!ready) { t.SettledSinceUtc = null; return; }
         if (t.SettledSinceUtc is not { } since) { t.SettledSinceUtc = now; return; }
         if (now - since < ArrivalSettle) return;
 
         _trip = null;
-        TeleportToSpawn(t.Target);
+        if (arriving)
+            TeleportToSpawn(t.Target);
+        else
+            SwitchInstance(t.Target);
+    }
+
+    /// <summary>After the spawn teleport: hop to the spawn's instance with Lifestream (aetheryte → Travel to Instanced Area).</summary>
+    private void SwitchInstance(Target target)
+    {
+        var current = _lifestream.CurrentInstance();
+        if (current == null) { PrintError("Lifestream is not loaded; no instance switch."); return; }
+        if (current == target.Instance) return;
+        if (current == 0)
+        {
+            Print(new SeStringBuilder().AddUiForeground(4)
+                .AddText("[HuntHop] This zone isn't split into instances right now; staying here.")
+                .AddUiForegroundOff().Build());
+            return;
+        }
+        if (_lifestream.CanChangeInstance() != true)
+        {
+            PrintError($"Can't switch to instance {target.Instance} here: not next to the aetheryte, or Lifestream's instance switcher is turned off.");
+            return;
+        }
+        if (!_lifestream.ChangeInstance(target.Instance))
+        {
+            PrintError("Lifestream is not loaded; no instance switch.");
+            return;
+        }
+        Print(new SeStringBuilder().AddUiForeground(45)
+            .AddText($"[HuntHop] Switching to instance {target.Instance}…")
+            .AddUiForegroundOff().Build());
+        Plugin.Log.Info($"Lifestream.ChangeInstance({target.Instance}) from {current} for {target.Key}");
     }
 
     private void TeleportToSpawn(Target target)
@@ -213,6 +267,9 @@ internal sealed class HopService : IDisposable
                 .AddText($"[HuntHop] Teleporting to {spot.Aetheryte.Name}…")
                 .AddUiForegroundOff().Build());
             Plugin.Log.Info($"Lifestream.Teleport({spot.Aetheryte.RowId} {spot.Aetheryte.Name}) accepted for {target.Key}");
+            if (_config.SwitchInstance && target.Instance > 0
+                && Plugin.DataManager.GetExcelSheet<Aetheryte>().GetRowOrDefault(spot.Aetheryte.RowId) is { } row)
+                _trip = new Trip(target, TripStage.Instance, row.Territory.RowId);
         }
         else
         {
@@ -375,10 +432,12 @@ internal sealed class HopService : IDisposable
     public void Stop()
     {
         CancelPending(fromLink: false);
-        if (_trip != null)
+        if (_trip is { } t)
         {
             _trip = null;
-            Print(new SeStringBuilder().AddText("[HuntHop] Spawn-point teleport after arrival cancelled.").Build());
+            Print(new SeStringBuilder().AddText(t.Stage == TripStage.Arrive
+                ? "[HuntHop] Spawn-point teleport after arrival cancelled."
+                : "[HuntHop] Instance switch after the teleport cancelled.").Build());
         }
         if (_lifestream.Abort())
             Print(new SeStringBuilder().AddText("[HuntHop] Lifestream aborted.").Build());
@@ -391,7 +450,7 @@ internal sealed class HopService : IDisposable
         if (ok == true)
         {
             LastHopUtc = DateTime.UtcNow;
-            _trip = _config.TeleportAfterHop ? new Trip(target) : null;
+            _trip = _config.TeleportAfterHop ? new Trip(target, TripStage.Arrive) : null;
             Print(new SeStringBuilder().AddUiForeground(45).AddText($"[HuntHop] Travelling to {world}…").AddUiForegroundOff().Build());
             Plugin.Log.Info($"Lifestream.ChangeWorld({world}) accepted");
         }
